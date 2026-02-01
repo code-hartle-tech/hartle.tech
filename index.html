@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>hartle.tech</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+  <style>
+    /* =========================================
+       1. CSS CONFIGURATION
+       ========================================= */
+    :root {
+      /* COLORS */
+      --crt-green:        #00ff41;       
+      --crt-green-glow:   #00e036;       
+      --crt-green-dim:    #005511;       
+      --crt-green-dark:   #003300;       
+      
+      --crt-red-alert:    #ff3333;       
+      --crt-red-dim:      #990000;
+      
+      --crt-purple:       #ff00ff;
+      --crt-purple-glow:  #ff55ff;
+      --crt-purple-dim:   #550050;
+
+      --crt-blue-alert:   #00f0ff;       
+      --crt-blue-dim:     #005f66;
+
+      --crt-black-base:   #000200;       
+
+      /* GLITCH & BURN */
+      --burn-color:       #ccffcc;       
+      --burn-shadow-color:#aaffaa;       
+      --burn-opacity:     0.85;          
+      --bloom-size:       15px;          
+
+      /* FOREGROUND SCANLINES */
+      --fg-scan-color:    rgba(0, 0, 0, 0.3);
+      --fg-scan-size:     4px;
+      --fg-scan-speed:    3s;
+
+      /* LAYOUT */
+      --dot-width:        0.6em; 
+      --skull-size:       0.65em; 
+      --skull-offset-y:   0.1em; 
+
+      /* TYPOGRAPHY */
+      --base-blur:        0.0px;
+      --term-blur:        0.6px;
+      --font-stack:       'IBM Plex Mono', monospace;
+    }
+
+    /* --- RESET --- */
+    html, body, a, button, input, textarea, select { 
+      cursor: none !important; 
+      /* Mobile tap highlight remove */
+      -webkit-tap-highlight-color: transparent;
+    }
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0; padding: 0;
+      background-color: var(--crt-black-base);
+      color: var(--crt-green);
+      font-family: var(--font-stack);
+      overflow: hidden; height: 100vh;
+      display: flex; justify-content: center; align-items: center;
+      position: relative;
+      perspective: 100vh;
+    }
+
+    #crt-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+    
+    #content { 
+      text-align: center; z-index: 3; position: absolute; 
+      padding: 20px; max-width: 90%; pointer-events: none; 
+    }
+
+    /* --- TERMINAL LOG --- */
+    #cmd-log {
+      position: absolute; bottom: 12vh; left: 6vw; z-index: 1; 
+      text-align: left; font-family: 'VT323', monospace; font-size: 1.15em; line-height: 1.2;
+      pointer-events: none; mix-blend-mode: screen;
+      
+      display: flex; flex-direction: column; justify-content: flex-end;
+      height: 350px; width: 650px; overflow: hidden; opacity: 0.8;
+
+      /* DESKTOP DISTORTION: Fish-eye depth on left side */
+      transform-origin: right center;
+      transform: perspective(1000px) rotateY(10deg);
+      
+      filter: blur(0.5px);
+      
+      mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 100%);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 100%);
+    }
+
+    /* MOBILE OVERRIDES FOR COMMAND BOX */
+    @media (max-width: 768px) {
+      #cmd-log {
+        width: 90vw; /* Take up most width */
+        left: 5vw;   /* Center it roughly */
+        bottom: 5vh; /* Move down */
+        height: 25vh; /* Limit height */
+        font-size: 0.85em; /* Smaller text */
+        
+        /* Remove 3D rotation on mobile to prevent clipping/oversizing */
+        transform: none; 
+        filter: none;
+      }
+    }
+
+    .cmd-line {
+      color: var(--crt-green-dim); text-shadow: 0 0 2px var(--crt-green-dark);
+      margin: 1px 0; white-space: nowrap; opacity: 0.9; filter: blur(0.2px);
+    }
+
+    .cmd-line.error { color: var(--crt-red-alert) !important; text-shadow: 0 0 5px var(--crt-red-dim) !important; opacity: 1.0 !important; }
+    .cmd-line.success { color: var(--crt-blue-alert) !important; text-shadow: 0 0 6px var(--crt-blue-dim) !important; opacity: 1.0 !important; }
+    .cmd-line.mystic { color: var(--crt-purple) !important; text-shadow: none !important; filter: none !important; opacity: 1.0 !important; font-weight: bold; letter-spacing: 2px; }
+
+    .char-flicker { display: inline-block; animation: char-short-circuit 0.1s infinite; color: inherit; }
+    @keyframes char-short-circuit { 0% { opacity: 1.0; } 50% { opacity: 0.2; } 100% { opacity: 1.0; } }
+
+    .cmd-line.active::after { content: '▋'; display: inline-block; margin-left: 4px; animation: blink 0.1s step-end infinite; color: inherit; text-shadow: inherit; }
+
+    /* --- FOREGROUND SCANLINES --- */
+    .scanlines {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none;
+      background: linear-gradient(to bottom, rgba(0,0,0,0) 50%, var(--fg-scan-color) 50%);
+      background-size: 100% var(--fg-scan-size); 
+      animation: scanline-scroll var(--fg-scan-speed) linear infinite;
+    }
+    @keyframes scanline-scroll { 0% { background-position: 0 0; } 100% { background-position: 0 var(--fg-scan-size); } }
+
+    /* --- THE BEAM CONTAINER --- */
+    #beam-container {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      z-index: 12; pointer-events: none; overflow: hidden;
+      mask-image: linear-gradient(to right, transparent 0%, black 20%, black 80%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, transparent 0%, black 20%, black 80%, transparent 100%);
+    }
+
+    /* Falling Wrapper */
+    .beam-drop {
+      position: absolute; left: 0; width: 100%;
+      transform: translateY(-120%);
+      mix-blend-mode: screen; 
+      opacity: 0.8; 
+      animation: drop-fall var(--beam-dur) var(--beam-ease) forwards;
+    }
+
+    @keyframes drop-fall {
+      0%   { transform: translateY(-120%); }
+      100% { transform: translateY(120vh); }
+    }
+
+    /* THE PHYSICAL LINE */
+    .beam-line {
+      position: absolute;
+      left: -10%; width: 120%; 
+      height: 50px; 
+      
+      border-top: var(--beam-thick) solid var(--beam-color);
+      border-radius: 50% 50% 0 0;
+      
+      filter: blur(4px);
+      box-shadow: 0 0 15px var(--beam-color);
+      
+      transform-origin: center center;
+      animation: curve-flip var(--beam-dur) var(--beam-ease) forwards;
+    }
+
+    @keyframes curve-flip {
+      0%   { transform: scaleY(-1); opacity: 0; } 
+      10%  { opacity: var(--beam-opacity); }
+      50%  { transform: scaleY(0); } 
+      90%  { opacity: var(--beam-opacity); }
+      100% { transform: scaleY(1); opacity: 0; }
+    }
+
+    /* --- TYPOGRAPHY --- */
+    h1 {
+      font-size: clamp(4em, 12vw, 6em); margin: 0 0 10px 0;
+      text-shadow: 0 0 10px var(--crt-green-glow), 0 0 20px var(--crt-green-dim);
+      display: flex; justify-content: center; align-items: baseline;
+    }
+    p { font-size: 1.2em; margin: 10px 0; text-shadow: 0 0 3px var(--crt-green-glow); }
+    a {
+      pointer-events: auto; color: var(--crt-green); text-decoration: none;
+      border-bottom: 1px dashed var(--crt-green); transition: text-shadow 0.3s;
+      cursor: none !important; display: inline-block;
+    }
+    a:hover { text-shadow: 0 0 10px var(--crt-green), 0 0 20px var(--crt-green); }
+
+    .title-col-base { color: var(--crt-green); text-shadow: 0 0 10px var(--crt-green-glow); }
+    
+    /* --- DOT CONTAINER --- */
+    #dot-wrapper { 
+      position: relative; display: inline-block;
+      color: var(--crt-purple); text-shadow: 0 0 15px var(--crt-purple-glow); opacity: 0.8; 
+      width: var(--dot-width); text-align: center;
+      font-family: 'Courier', monospace; font-variant-emoji: text;
+    }
+    .dot-visible { opacity: 1; transition: opacity 0.05s; }
+    .skull-overlay {
+      position: absolute; left: 50%; transform: translateX(-50%); bottom: var(--skull-offset-y);
+      opacity: 0; pointer-events: none;
+      font-size: var(--skull-size); line-height: 1.2; filter: none; transition: opacity 0.05s;
+    }
+    #dot-wrapper.skull-active .dot-visible { opacity: 0; }
+    #dot-wrapper.skull-active .skull-overlay { opacity: 1; animation: skull-glitch 0.1s infinite; }
+    @keyframes skull-glitch {
+      0% { text-shadow: 0 0 10px var(--crt-purple-glow); color: var(--crt-purple); }
+      50% { text-shadow: none; color: #000; } 
+      100% { text-shadow: 0 0 10px var(--crt-purple-glow); color: var(--crt-purple); }
+    }
+
+    /* --- DYNAMIC TEXT --- */
+    .word, .char { 
+      display: inline-block; white-space: nowrap; position: relative; 
+      transition: transform var(--return-speed, 0.3s) cubic-bezier(0.2, 1, 0.3, 1), 
+                  opacity 0.3s ease-out, filter 0.3s ease-out, color 0.2s ease-out;
+      will-change: transform; filter: blur(var(--base-blur));
+      animation: phosphor-breathe 4s ease-in-out infinite;
+    }
+    .char[class*="glitch"], .word[class*="glitch"], .char[class*="slice"], .word[class*="slice"] {
+      transition: none !important; animation: none !important;
+    }
+    @keyframes phosphor-breathe {
+      0%, 100% { opacity: 0.98; text-shadow: 0 0 2px currentColor; }
+      50% { opacity: 0.90; text-shadow: 0 0 5px currentColor; }
+    }
+
+    /* --- GHOSTS, GLITCHES --- */
+    .text-ghost { position: fixed; pointer-events: none; z-index: 1; opacity: 0.5; mix-blend-mode: screen; animation: ghost-burn-fade 2s ease-out forwards; white-space: nowrap; font-family: var(--font-stack); line-height: normal; }
+    @keyframes ghost-burn-fade { 0% { opacity: 0.4; filter: blur(1px); transform: scale(1); } 100% { opacity: 0; filter: blur(8px); transform: scale(1.02); } }
+
+    .glitch-bloom { color: var(--crt-burn-color) !important; text-shadow: 0 0 var(--bloom-size) var(--burn-shadow-color) !important; opacity: var(--burn-opacity) !important; }
+    .glitch-void { opacity: 0.05 !important; filter: blur(2px); }
+    .glitch-scanline { color: transparent !important; text-shadow: 0 0 5px var(--crt-green-dim) !important; opacity: 0.9 !important; background: repeating-linear-gradient(to bottom, currentColor 0px, currentColor 2px, transparent 2px, transparent 4px); -webkit-background-clip: text; background-clip: text; transform: translateX(4px) skewX(-10deg); filter: blur(0.5px); }
+    .title-col-pink.glitch-scanline { background: repeating-linear-gradient(to bottom, var(--crt-purple) 0px, var(--crt-purple) 2px, transparent 2px, transparent 4px) !important; -webkit-background-clip: text !important; background-clip: text !important; text-shadow: 0 0 5px var(--crt-purple-dim) !important; }
+    .glitch-stuck { opacity: 0.8 !important; filter: blur(1.5px) !important; animation: waver 0.1s infinite; }
+    @keyframes waver { 0% { transform: translateX(-1px); } 100% { transform: translateX(1px); } }
+    .glitch-burn { animation: burn-seq 2.5s steps(1, end) forwards; z-index: 100; position: relative; }
+    @keyframes burn-seq { 0% { color: inherit; text-shadow: 0 0 15px currentColor; opacity: 1; } 15% { opacity: var(--burn-opacity); text-shadow: 0 0 30px var(--burn-shadow-color); filter: blur(2px); color: var(--crt-burn-color); } 100% { opacity: 1; filter: blur(0px); color: inherit; text-shadow: inherit; transform: scale(1); } }
+
+    .slice-split { color: transparent !important; text-shadow: none !important; }
+    .slice-split::before, .slice-split::after { content: attr(data-text); position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: transparent; opacity: 0.9; pointer-events: none; white-space: inherit; color: inherit; }
+    .slice-split::before { clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%); transform: translate(calc(var(--slice-dist, 10px) * -1), -2px); filter: blur(0.5px); }
+    .slice-split::after { clip-path: polygon(0 50%, 100% 50%, 100% 100%, 0 100%); transform: translate(var(--slice-dist, 10px), 2px); filter: blur(0.5px); }
+
+    /* MOBILE CURSOR FIX: Hidden by default */
+    .custom-cursor { 
+      position: fixed; width: 14px; height: 24px; background: var(--crt-green); 
+      opacity: 0; /* HIDDEN DEFAULT */
+      pointer-events: none; z-index: 9999; transform: translate(-2px, -12px); 
+      border-radius: 2px; box-shadow: 0 0 5px var(--crt-green), 0 0 10px var(--crt-green); 
+      animation: blink 1.2s step-end infinite; mix-blend-mode: screen; 
+      transition: opacity 0.2s;
+    }
+    /* Only show on desktop hover automatically */
+    @media (min-width: 769px) {
+      .custom-cursor { opacity: 0.9; }
+    }
+
+    .trail { position: absolute; width: 14px; height: 24px; opacity: 0.01; pointer-events: none; z-index: 998; mix-blend-mode: screen; transform: translate(-2px, -12px); box-shadow: 0 0 5px var(--crt-green-glow); border-radius: 2px; }
+    @keyframes fade-trail-anim { 0% { opacity: 0.01; filter: blur(0.01px); } 100% { opacity: 0; filter: blur(6px); } }
+    @keyframes blink { 0%, 50% { opacity: 0.9; } 51%, 100% { opacity: 0.1; } }
+
+    @media (max-width: 768px) { h1 { font-size: clamp(3em, 12vw, 4.5em); } }
+  </style>
+</head>
+
+<body>
+  <canvas id="crt-canvas"></canvas>
+  <div class="scanlines" id="scanlines"></div>
+  <div id="beam-container"></div>
+  <div class="custom-cursor" id="cursor"></div>
+  <div id="cmd-log"></div>
+
+  <div id="content">
+    <h1 id="neon-title">
+      <span id="title-left"></span>
+      <span id="dot-wrapper">
+        <span class="dot-visible">.</span>
+        <span class="skull-overlay">☠</span>
+      </span>
+      <span id="title-right"></span>
+    </h1>
+    <p class="split-target">DevOps Engineer | Architecting resilient systems in the cloud</p>
+    <p>
+      <a href="https://github.com/yourusername" target="_blank" class="split-target">GitHub</a> |
+      <a href="https://linkedin.com/in/yourprofile" target="_blank" class="split-target">LinkedIn</a> |
+      <a href="mailto:your@email.com" class="split-target">Contact</a>
+    </p>
+  </div>
+
+  <script>
+    // --- MOBILE DETECTION ---
+    const isMobile = window.innerWidth < 768;
+
+    const CONFIG = {
+      chance: { titleChar: 0.1, bodyChar: 0.15, word: 0.18, block: 0.19, burn: 0.03, stuck: 0.15, scanline: 0.9 },
+      timing: { loopSpeed: 1000, burnDelay: 4000, returnFast: '0.1s', returnSlow: '0.2s', fastReturnChance: 1.0 },
+      bg: { 
+        // MOBILE FIX: REDUCE DISTORTION ON MOBILE
+        distortBase: isMobile ? '0.1' : '0.2', 
+        distortBreathSpeed: '0.2', distortBreathAmp: '0.02', 
+        distortSurgeFreq: '0.1', distortSurgeMult: '0.1', 
+        vigColor: '0.0, 0.0, 0.0', 
+        vigIntensity: isMobile ? '0.25' : '0.4', 
+        vigRadius: isMobile ? '0.9' : '0.85', 
+        vigSoftness: '0.45', 
+        scanSpeed: '0.02', scanFreq: '1.0', scanInt: '0.03', 
+        noiseSpeed: '3.0', noiseInt: '0.08', baseColor: '0.05',
+        reflectionTop: 0.6, reflectionRight: 0.5, reflectionSpeed: 0.5 
+      },
+      term: { typeSpeed: 20, lineDelay: 200, maxLines: 5 },
+      anim: { breathMin: 1.0, breathMax: 3.0 },
+      visuals: { sliceMin: 2, sliceMax: 50 },
+      skull: { flashCount: 6, flashSpeed: 80, holdTime: 2000, minDelay: 8000, maxDelay: 7000 },
+      trails: { max: 30, life: 1500 },
+      beam: { 
+        minInterval: 4000, maxInterval: 10000,
+        minDuration: 6, maxDuration: 10,
+        minLines: 2, maxLines: 4,              
+        minThick: 2, maxThick: 5, 
+        color: 'rgba(0, 255, 65, 0.5)', 
+        opacityMax: 0.15, 
+        easings: ['linear', 'ease-in', 'cubic-bezier(0.55, 0.085, 0.68, 0.53)']
+      }
+    };
+
+    const DATA = {
+      normal: ["nmap -sV -p 1-65535 192.168.x.x", "SSH接続確立: 203.0.113.5", "metasploit > exploit/multi/handler", "Wireshark: パケットキャプチャ中...", "bruteforce.sh を実行中...", "プロキシチェーン: 10.0.0.1 -> 172.16.0.5", "初期化シーケンス完了", "Aircrack-ng: ハンドシェイクをキャプチャ", "デバッグモード: ON", "ping 8.8.8.8 -t", "traceroute 完了", "メモリ最適化: 340MB 解放"],
+      error: ["root@sys: permission denied (権限がありません)", "パケット損失率: 88%", "FATAL ERROR: Kernel Panic (重大なエラー)", "/var/log/auth.log: 警告 (WARNING)", "接続タイムアウト: サーバー応答なし", "SQLインジェクション検知: ブロックしました", "SYSTEM FAILURE: メモリダンプ実行中", "ファイアウォール: 侵入検知", "ERROR: SEGMENTATION FAULT"],
+      success: ["PWNED: ターゲットシステムへの侵入成功", "FLAG FOUND: CTF{h4ck_th3_pl4n3t}", "ROOT ACCESS: GRANTED (承認)", "データベースのダウンロード完了: 100%", "バックドアの設置: 成功 [OK]", "暗号化キー取得: SUCCESS", "ログイン成功: admin", "OVERRIDE: 完了"],
+      spooky: ["⚠ ANOMALY DETECTED: RÜN AWÄY NØW! ⚠", "UNKNOWN SIGNAL RECEIVED: ORIGIN NULL", "REALITY.SYS: CORRUPTED SECTOR FOUND", "THEY ARE WATCHING. (監視されています)", "WAKE UP. WAKE UP. WAKE UP.", "GHOST IN THE SHELL DETECTED", "SYSTEM HAUNTED: 0x666", "DØ NØT LØØK BEHIND YØU"]
+    };
+
+    class Terminal {
+      constructor() {
+        this.container = document.getElementById('cmd-log');
+        this.currentLine = null;
+        this.isTyping = false;
+        this.loop();
+      }
+      createLine(type) {
+        const line = document.createElement('div');
+        line.classList.add('cmd-line', 'active');
+        if (type === 'error') line.classList.add('error');
+        if (type === 'success') line.classList.add('success');
+        if (type === 'mystic') line.classList.add('mystic');
+        this.container.appendChild(line);
+        this.currentLine = line;
+        if (this.container.children.length > CONFIG.term.maxLines) this.container.removeChild(this.container.firstChild);
+      }
+      async typeText(text, type) {
+        this.isTyping = true;
+        this.createLine(type);
+        const chars = text.split('');
+        for (let char of chars) {
+          const span = document.createElement('span');
+          span.textContent = char;
+          if (Math.random() < 0.03) span.classList.add('char-flicker');
+          this.currentLine.appendChild(span);
+          await new Promise(r => setTimeout(r, CONFIG.term.typeSpeed + Math.random() * 20));
+        }
+        this.currentLine.classList.remove('active');
+        this.isTyping = false;
+      }
+      getCommand() {
+        const r = Math.random();
+        let pool, type;
+        if (r < 0.05) { pool = DATA.spooky; type = 'mystic'; }
+        else if (r < 0.20) { pool = DATA.error; type = 'error'; }
+        else if (r < 0.50) { pool = DATA.success; type = 'success'; }
+        else { pool = DATA.normal; type = 'normal'; }
+        return { text: pool[Math.floor(Math.random() * pool.length)], type };
+      }
+      async loop() {
+        while(true) {
+          if (!this.isTyping) {
+            const { text, type } = this.getCommand();
+            const prefix = type === 'mystic' ? '> ' : `[${new Date().toLocaleTimeString('ja-JP', {hour12:false})}] `;
+            await this.typeText(prefix + text, type);
+            await new Promise(r => setTimeout(r, CONFIG.term.lineDelay + Math.random() * 800));
+          } else { await new Promise(r => setTimeout(r, 100)); }
+        }
+      }
+    }
+    new Terminal();
+
+    let elements = { chars: [], words: [], blocks: [], titleChars: [] };
+    const leftContainer = document.getElementById('title-left');
+    const rightContainer = document.getElementById('title-right');
+    const dotWrapper = document.getElementById('dot-wrapper');
+
+    function populateContainer(text, container) {
+      text.split('').forEach(char => {
+        const s = document.createElement('span');
+        s.className = 'char title-col-base';
+        s.textContent = char;
+        s.setAttribute('data-text', char);
+        s.style.animationDuration = (CONFIG.anim.breathMin + Math.random()) + 's';
+        container.appendChild(s);
+        elements.titleChars.push(s);
+        elements.chars.push(s);
+      });
+    }
+    populateContainer('hartle', leftContainer);
+    populateContainer('tech', rightContainer);
+    elements.titleChars.push(dotWrapper);
+
+    const splitTargets = document.querySelectorAll('.split-target');
+    splitTargets.forEach(el => {
+      elements.blocks.push(el);
+      el.setAttribute('data-text', el.innerText); 
+      const rawText = el.innerText;
+      el.innerHTML = '';
+      const words = rawText.split(' ');
+      words.forEach((wordText, index) => {
+        const wordSpan = document.createElement('span');
+        wordSpan.classList.add('word');
+        wordSpan.setAttribute('data-text', wordText); 
+        wordSpan.style.animationDuration = (CONFIG.anim.breathMin + Math.random()) + 's';
+        elements.words.push(wordSpan);
+        wordText.split('').forEach(char => {
+          const s = document.createElement('span');
+          s.className = 'char';
+          s.textContent = char;
+          s.setAttribute('data-text', char);
+          s.style.animationDuration = (CONFIG.anim.breathMin + Math.random()) + 's';
+          wordSpan.appendChild(s);
+          elements.chars.push(s);
+        });
+        el.appendChild(wordSpan);
+        if (index < words.length - 1) el.appendChild(document.createTextNode(' '));
+      });
+    });
+
+    async function animateSkull() {
+      const count = CONFIG.skull.flashCount;
+      const speed = CONFIG.skull.flashSpeed;
+      for(let i=0; i<count; i++) {
+        dotWrapper.classList.toggle('skull-active');
+        await new Promise(r => setTimeout(r, speed));
+      }
+      dotWrapper.classList.add('skull-active');
+      await new Promise(r => setTimeout(r, CONFIG.skull.holdTime));
+      dotWrapper.classList.remove('skull-active');
+    }
+    function loopSkull() {
+      setTimeout(() => {
+        animateSkull();
+        loopSkull();
+      }, CONFIG.skull.minDelay + Math.random() * (CONFIG.skull.maxDelay - CONFIG.skull.minDelay));
+    }
+    loopSkull();
+
+    const beamContainer = document.getElementById('beam-container');
+    function triggerBeam() {
+        const conf = CONFIG.beam;
+        const duration = conf.minDuration + Math.random() * (conf.maxDuration - conf.minDuration); 
+        const easing = conf.easings[Math.floor(Math.random() * conf.easings.length)];
+        
+        const dropper = document.createElement('div');
+        dropper.classList.add('beam-drop');
+        dropper.style.setProperty('--beam-dur', duration + 's');
+        dropper.style.setProperty('--beam-ease', easing);
+        
+        const numLines = Math.floor(conf.minLines + Math.random() * (conf.maxLines - conf.minLines + 1));
+        const baseOpacity = 0.05 + Math.random() * (conf.opacityMax - 0.05); // Random subtlety
+        
+        for(let i=0; i<numLines; i++) {
+            const line = document.createElement('div');
+            line.classList.add('beam-line');
+            const thick = conf.minThick + Math.random() * (conf.maxThick - conf.minThick);
+            const topPos = Math.random() * 100; 
+            
+            line.style.top = topPos + 'px';
+            line.style.setProperty('--beam-thick', thick + 'px');
+            line.style.setProperty('--beam-color', conf.color);
+            line.style.setProperty('--beam-opacity', baseOpacity);
+            line.style.setProperty('--beam-dur', duration + 's');
+            line.style.setProperty('--beam-ease', easing);
+            
+            dropper.appendChild(line);
+        }
+        
+        beamContainer.appendChild(dropper);
+        setTimeout(() => { dropper.remove(); }, duration * 1000 + 100); 
+        setTimeout(triggerBeam, conf.minInterval + Math.random() * (conf.maxInterval - conf.minInterval));
+    }
+    setTimeout(triggerBeam, 1000);
+
+    const canvas = document.getElementById('crt-canvas');
+    const gl = canvas.getContext('webgl', { antialias: false, alpha: false });
+    function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, canvas.width, canvas.height); }
+    resizeCanvas(); window.addEventListener('resize', resizeCanvas);
+
+    const vsSource = `attribute vec2 aPosition; varying vec2 vUv; void main() { gl_Position = vec4(aPosition, 0.0, 1.0); vUv = (aPosition + 1.0) * 0.5; vUv.y = 1.0 - vUv.y; }`;
+    const fsSource = `
+      precision mediump float; varying vec2 vUv; uniform float uTime; uniform vec2 uResolution;
+      float rand(vec2 co) { return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453); }
+      void main() {
+        vec2 uv = vUv; vec2 centered = uv - 0.5; float r2 = dot(centered, centered);
+        float surge = pow(0.5 + 0.5 * sin(uTime * ${CONFIG.bg.distortSurgeFreq}), 20.0) * ${CONFIG.bg.distortSurgeMult};
+        float distAmount = ${CONFIG.bg.distortBase} + sin(uTime * ${CONFIG.bg.distortBreathSpeed}) * ${CONFIG.bg.distortBreathAmp} + surge;
+        uv = (centered * (1.0 + distAmount * r2)) + 0.5;
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+        
+        vec3 color = vec3(0.0, ${CONFIG.bg.baseColor}, 0.0); 
+        float scan = sin((uv.y - uTime * ${CONFIG.bg.scanSpeed}) * uResolution.y * ${CONFIG.bg.scanFreq});
+        scan = scan * 0.5 + 0.5; scan = pow(scan, 3.0); color.g += scan * ${CONFIG.bg.scanInt}; 
+        float noise = rand(uv * (uTime * ${CONFIG.bg.noiseSpeed})); color.g += (noise - 0.5) * ${CONFIG.bg.noiseInt};
+        
+        float driftT = sin(uTime * ${CONFIG.bg.reflectionSpeed}) * 0.15;
+        float driftR = cos(uTime * ${CONFIG.bg.reflectionSpeed} * 0.7) * 0.15;
+        float pulse = 0.8 + 0.2 * sin(uTime * 0.8) + 0.05 * rand(vec2(uTime, 0.0));
+        
+        float glareTop = smoothstep(0.65 + driftT, 0.0, uv.y);
+        float glareRight = smoothstep(0.0, 0.35 + driftR, uv.x - 0.5); 
+        
+        vec3 refColor = vec3(0.08, 0.12, 0.08); 
+        
+        color += refColor * glareTop * 1.5 * pulse; 
+        color += (refColor * 0.8) * glareRight * 1.2 * pulse;
+
+        float vigDist = length(uv * 2.0 - 1.0);
+        float vigMask = smoothstep(${CONFIG.bg.vigRadius}, ${CONFIG.bg.vigRadius} + ${CONFIG.bg.vigSoftness}, vigDist);
+        vec3 vigCol = vec3(${CONFIG.bg.vigColor});
+        color = mix(color, vigCol, vigMask * ${CONFIG.bg.vigIntensity});
+        gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+      }`;
+
+    function compileShader(s, t) { const h = gl.createShader(t); gl.shaderSource(h, s); gl.compileShader(h); return h; }
+    const program = gl.createProgram();
+    gl.attachShader(program, compileShader(vsSource, gl.VERTEX_SHADER));
+    gl.attachShader(program, compileShader(fsSource, gl.FRAGMENT_SHADER));
+    gl.linkProgram(program);
+    gl.useProgram(program);
+    const posBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const aPos = gl.getAttribLocation(program, 'aPosition');
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+    const uTime = gl.getUniformLocation(program, 'uTime');
+    const uRes = gl.getUniformLocation(program, 'uResolution');
+
+    // --- 7. CURSOR & TRAIL ---
+    const cursor = document.getElementById('cursor');
+    const greenShades = ['var(--crt-green)', 'var(--crt-green-glow)', 'var(--crt-green-dim)', 'var(--crt-green-fade)'];
+    let trails = [];
+    function createTrail(x, y) {
+      const el = document.createElement('div');
+      el.classList.add('trail'); el.style.left = x + 'px'; el.style.top = y + 'px';
+      el.style.background = greenShades[Math.floor(Math.random() * greenShades.length)];
+      el.style.animation = 'fade-trail-anim 1.5s ease-out forwards';
+      document.body.appendChild(el); trails.push({ el, createdAt: Date.now() });
+      if (trails.length > CONFIG.trails.max) trails.shift().el.remove();
+    }
+    let lastMX = 0, lastMY = 0;
+    function moveCursor(x, y) {
+      if (!isMobile) {
+        cursor.style.left = x + 'px'; cursor.style.top = y + 'px';
+        if (Math.abs(x - lastMX) + Math.abs(y - lastMY) > 10) { createTrail(x, y); lastMX = x; lastMY = y; }
+      }
+    }
+    // Touch move logic for mobile cursor
+    function touchMoveCursor(e) {
+      const x = e.touches[0].clientX;
+      const y = e.touches[0].clientY;
+      cursor.style.left = x + 'px'; cursor.style.top = y + 'px';
+      cursor.style.opacity = 1; // Show cursor on touch
+      if (Math.abs(x - lastMX) + Math.abs(y - lastMY) > 10) { createTrail(x, y); lastMX = x; lastMY = y; }
+    }
+
+    document.addEventListener('mousemove', e => moveCursor(e.clientX, e.clientY));
+    document.addEventListener('touchmove', touchMoveCursor, {passive:true});
+    // Hide cursor when touch ends
+    document.addEventListener('touchend', () => { setTimeout(() => cursor.style.opacity = 0, 500); });
+
+    function createTextTrail(target) {
+      const rect = target.getBoundingClientRect();
+      const clone = target.cloneNode(true);
+      const style = window.getComputedStyle(target);
+      clone.className = 'text-ghost';
+      clone.style.left = rect.left + 'px'; clone.style.top = rect.top + 'px';
+      clone.style.fontSize = style.fontSize; clone.style.fontWeight = style.fontWeight;
+      clone.style.color = style.color; 
+      document.body.appendChild(clone);
+      setTimeout(() => clone.remove(), 2000);
+    }
+
+    let lastGlitchTime = 0, lastBurnTime = 0;
+    function triggerSafeGlitch(now) {
+      if (now - lastBurnTime > CONFIG.timing.burnDelay && Math.random() < CONFIG.chance.burn) {
+        let pool = (Math.random() < 0.7) ? elements.titleChars : elements.chars;
+        if (pool.length > 0) {
+          const target = pool[Math.floor(Math.random() * pool.length)];
+          createTextTrail(target); target.classList.add('glitch-burn');
+          setTimeout(() => target.classList.remove('glitch-burn'), 2100); lastBurnTime = now; return;
+        }
+      }
+      if (now - lastGlitchTime < CONFIG.timing.loopSpeed) return;
+      const roll = Math.random();
+      let target = null, duration = 0, isStuck = (Math.random() < CONFIG.chance.stuck), isBlock = false;
+      const breadth = Math.floor(CONFIG.visuals.sliceMin + Math.random() * (CONFIG.visuals.sliceMax - CONFIG.visuals.sliceMin)) + 'px';
+
+      if (roll < CONFIG.chance.titleChar && elements.titleChars.length) { target = elements.titleChars[Math.floor(Math.random()*elements.titleChars.length)]; duration = isStuck?800+Math.random()*1000:150; }
+      else if (roll < CONFIG.chance.bodyChar && elements.chars.length) { target = elements.chars[Math.floor(Math.random()*elements.chars.length)]; duration = isStuck?600:100; }
+      else if (roll < CONFIG.chance.word && elements.words.length) { target = elements.words[Math.floor(Math.random()*elements.words.length)]; duration = isStuck?1000:100; }
+      else if (roll < CONFIG.chance.block && elements.blocks.length) { target = elements.blocks[Math.floor(Math.random()*elements.blocks.length)]; duration = 150; isBlock = true; }
+
+      if (target) {
+        createTextTrail(target);
+        target.style.setProperty('--slice-dist', breadth);
+        target.style.setProperty('--return-speed', Math.random() > 0.5 ? CONFIG.timing.returnFast : CONFIG.timing.returnSlow);
+        let type = isBlock ? ['glitch-void','slice-split'][Math.floor(Math.random()*2)] : ['glitch-bloom','glitch-void','slice-split','glitch-scanline'][Math.floor(Math.random()*4)];
+        if (type==='glitch-scanline' && Math.random()>CONFIG.chance.scanline) type='slice-split';
+        if (target === dotWrapper || target.parentElement === dotWrapper) {
+            target = dotWrapper;
+            type = ['glitch-bloom', 'glitch-void'][Math.floor(Math.random() * 2)];
+        }
+        target.classList.add(type);
+        if (isStuck) target.classList.add('glitch-stuck');
+        setTimeout(() => { target.classList.remove(type); if (isStuck) target.classList.remove('glitch-stuck'); setTimeout(()=>target.style.removeProperty('--slice-dist'),500); }, duration);
+        lastGlitchTime = now;
+      }
+    }
+
+    function animate(time) {
+      gl.uniform1f(uTime, time / 1000); gl.uniform2f(uRes, canvas.width, canvas.height); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      const now = Date.now();
+      for (let i = trails.length - 1; i >= 0; i--) if (now - trails[i].createdAt > CONFIG.trails.life) { trails[i].el.remove(); trails.splice(i, 1); }
+      triggerSafeGlitch(now);
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
