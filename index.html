@@ -5,9 +5,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   
-  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#000200" />
-  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000200" />
-  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#000200" />
   
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -63,11 +61,13 @@
       --font-stack:       'IBM Plex Mono', monospace;
     }
 
-    /* --- RESET --- */
+    /* --- RESET & VIEWPORT LOCK --- */
     html {
-      background-color: var(--crt-black-base); /* Fills overscroll gaps */
+      /* Critical: Matches theme-color for Safari overscroll area */
+      background-color: var(--crt-black-base); 
       height: 100%;
       overflow: hidden;
+      -webkit-text-size-adjust: 100%;
     }
 
     body {
@@ -76,34 +76,46 @@
       color: var(--crt-green);
       font-family: var(--font-stack);
       
-      /* MOBILE FIX: Use Dynamic Viewport Height to fill screen behind bars */
-      width: 100vw;
-      height: 100dvh; 
+      /* STRICT VIEWPORT LOCKING */
+      position: fixed; 
+      inset: 0;
+      width: 100%;
+      height: 100%;
       overflow: hidden;
       
+      /* PREVENT RUBBER BANDING */
+      overscroll-behavior: none;
+      
       display: flex; justify-content: center; align-items: center;
-      position: relative;
       perspective: 100vh;
       
-      /* MOBILE: Disable Pinch/Scroll Gestures */
+      /* DISABLE DEFAULT INTERACTIONS */
       touch-action: none; 
+      -webkit-user-select: none;
+      user-select: none;
       -webkit-tap-highlight-color: transparent;
       cursor: none !important; 
     }
 
-    /* FIXED CANVAS: Ensures background stays pinned and covers full screen */
+    /* CANVAS FULLSCREEN: Pinned to exact viewport edges */
     #crt-canvas { 
       position: fixed; 
       top: 0; left: 0; 
-      width: 100vw; 
-      height: 100dvh; 
+      width: 100%; 
+      height: 100%; 
       z-index: 0; 
       object-fit: cover;
+      pointer-events: none;
     }
     
     #content { 
       text-align: center; z-index: 3; position: absolute; 
-      padding: 20px; max-width: 90%; pointer-events: none; 
+      /* Safe Area Inset ensures text avoids notch/island */
+      padding: 20px; 
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      max-width: 90%; 
+      pointer-events: none; 
     }
 
     /* --- TERMINAL LOG --- */
@@ -128,17 +140,16 @@
     /* MOBILE: Command Box Adjustment */
     @media (max-width: 768px) {
       #cmd-log {
-        width: 85vw; /* Fits safely on small screens */
-        left: 7.5vw; /* Centered */
-        bottom: 10vh; /* Raised to avoid bottom gestures */
-        height: 20vh; /* Shorter history */
-        font-size: 0.8em; /* Smaller font */
+        width: 85vw;
+        left: 7.5vw;
+        /* Safe area aware positioning */
+        bottom: max(8vh, env(safe-area-inset-bottom));
+        height: 20vh; 
+        font-size: 0.8em;
         
-        /* Remove 3D skew/blur on mobile for crispness */
         transform: none;
         filter: none;
         
-        /* Adjust mask */
         mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);
         -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);
       }
@@ -547,8 +558,24 @@
 
     const canvas = document.getElementById('crt-canvas');
     const gl = canvas.getContext('webgl', { antialias: false, alpha: false });
-    function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, canvas.width, canvas.height); }
-    resizeCanvas(); window.addEventListener('resize', resizeCanvas);
+    
+    // --- 3. DYNAMIC RESIZE LOGIC ---
+    function resizeCanvas() { 
+      // Use VisualViewport if available to handle dynamic bars
+      const width = window.visualViewport ? window.visualViewport.width : window.innerWidth;
+      const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      
+      canvas.width = width * window.devicePixelRatio;
+      canvas.height = height * window.devicePixelRatio;
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+    
+    resizeCanvas(); 
+    window.addEventListener('resize', resizeCanvas);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', resizeCanvas);
+      window.visualViewport.addEventListener('scroll', resizeCanvas);
+    }
 
     const vsSource = `attribute vec2 aPosition; varying vec2 vUv; void main() { gl_Position = vec4(aPosition, 0.0, 1.0); vUv = (aPosition + 1.0) * 0.5; vUv.y = 1.0 - vUv.y; }`;
     const fsSource = `
