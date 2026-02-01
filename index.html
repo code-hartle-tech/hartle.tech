@@ -3,12 +3,14 @@
 <head>
   <meta charset="UTF-8" />
 
-  <!-- iOS: allow safe-area usage; browser tabs still have limits -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <!-- iOS: allow safe-area + dynamic bars -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
 
-  <!-- Best-effort UI tint hint (iOS may ignore in tabs). Use a dark green that matches your shader. -->
+  <!-- Best-effort tint (iOS Safari won’t truly “transparent” the bars in a normal tab) -->
   <meta name="theme-color" content="#001a07" />
+  <meta name="color-scheme" content="dark light" />
 
+  <!-- PWA-ish flags (only fully honored when added to Home Screen / standalone) -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
@@ -23,9 +25,6 @@
        1. CSS CONFIGURATION
        ========================================= */
     :root {
-      /* PAGE BLEED COLOR (critical for iOS "unpaintable" areas / toolbar transitions) */
-      --page-bleed:       #001a07;
-
       /* COLORS */
       --crt-green:        #00ff41;
       --crt-green-glow:   #00e036;
@@ -42,8 +41,8 @@
       --crt-blue-alert:   #00f0ff;
       --crt-blue-dim:     #005f66;
 
-      /* Use page bleed as base so any gaps aren't black */
-      --crt-black-base:   var(--page-bleed);
+      /* Base page bleed (used behind toolbars / overscroll) */
+      --crt-black-base:   #001a07;
 
       /* GLITCH & BURN */
       --burn-color:       #ccffcc;
@@ -66,129 +65,74 @@
       --term-blur:        0.6px;
       --font-stack:       'IBM Plex Mono', monospace;
 
-      /* VisualViewport-driven CSS sizing (set by JS). Fallbacks keep desktop fine. */
+      /* VisualViewport-driven sizing (set by JS) */
       --vvw: 100vw;
       --vvh: 100vh;
     }
 
     /* --- RESET --- */
     html, body {
+      height: 100%;
       margin: 0;
       padding: 0;
-      width: 100%;
-      height: 100%;
-      background: var(--crt-black-base); /* fills any iOS "outside canvas" area */
-      overflow: hidden;
+      background: var(--crt-black-base);
+      color: var(--crt-green);
+      font-family: var(--font-stack);
       -webkit-text-size-adjust: 100%;
     }
 
-    body {
-      color: var(--crt-green);
-      font-family: var(--font-stack);
-
-      /* Disable scroll/zoom-ish behaviors */
-      touch-action: none;
-      -webkit-tap-highlight-color: transparent;
-      -webkit-user-select: none;
-      user-select: none;
-
-      cursor: none !important;
+    /*
+      IMPORTANT: We keep the document scrollable via #scroll-proxy
+      so iOS Safari is more willing to use its “glassy overlay” toolbar behavior.
+    */
+    #scroll-proxy {
+      height: 100vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      background: var(--crt-black-base);
+    }
+    /* 1–2px scroll context is enough */
+    #scroll-proxy::after {
+      content: "";
+      display: block;
+      height: 2px;
     }
 
-    /* A single fixed stage that always tracks the *visual viewport* via --vvw/--vvh */
-    #stage {
+    /*
+      Your real app stays pinned to the viewport,
+      but we DO NOT pin body itself anymore.
+    */
+    #app {
       position: fixed;
-      inset: 0;
+      left: 0;
+      top: 0;
       width: var(--vvw);
       height: var(--vvh);
       overflow: hidden;
-
+      background: var(--crt-black-base);
       display: flex;
       justify-content: center;
       align-items: center;
       perspective: 100vh;
 
+      /* Keep your “no pinch / no scroll inside app” behavior */
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+      cursor: none !important;
+    }
+
+    /* FIXED CANVAS */
+    #crt-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      object-fit: cover;
+      pointer-events: none;
       background: var(--crt-black-base);
     }
 
-    /* FULLSCREEN LAYERS: NEVER use 100vh/100vw on iOS; use var(--vvw/--vvh) */
-    #crt-canvas,
-    .scanlines,
-    #beam-container {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: var(--vvw);
-      height: var(--vvh);
-      inset: 0; /* safe even with width/height specified */
-      pointer-events: none;
-    }
-
-    #crt-canvas {
-      z-index: 0;
-      background: var(--crt-black-base); /* fallback behind WebGL */
-      object-fit: cover;
-    }
-
-    .scanlines {
-      z-index: 10;
-      background: linear-gradient(to bottom, rgba(0,0,0,0) 50%, var(--fg-scan-color) 50%);
-      background-size: 100% var(--fg-scan-size);
-      animation: scanline-scroll var(--fg-scan-speed) linear infinite;
-    }
-    @keyframes scanline-scroll {
-      0% { background-position: 0 0; }
-      100% { background-position: 0 var(--fg-scan-size); }
-    }
-
-    /* --- THE BEAM CONTAINER --- */
-    #beam-container {
-      z-index: 12;
-      overflow: hidden;
-      mask-image: linear-gradient(to right, transparent 0%, black 20%, black 80%, transparent 100%);
-      -webkit-mask-image: linear-gradient(to right, transparent 0%, black 20%, black 80%, transparent 100%);
-    }
-
-    /* Falling Wrapper */
-    .beam-drop {
-      position: absolute;
-      left: 0;
-      width: 100%;
-      transform: translateY(-120%);
-      mix-blend-mode: screen;
-      opacity: 0.8;
-      animation: drop-fall var(--beam-dur) var(--beam-ease) forwards;
-    }
-    @keyframes drop-fall {
-      0%   { transform: translateY(-120%); }
-      100% { transform: translateY(120vh); }
-    }
-
-    /* THE PHYSICAL LINE */
-    .beam-line {
-      position: absolute;
-      left: -10%;
-      width: 120%;
-      height: 50px;
-
-      border-top: var(--beam-thick) solid var(--beam-color);
-      border-radius: 50% 50% 0 0;
-
-      filter: blur(4px);
-      box-shadow: 0 0 15px var(--beam-color);
-
-      transform-origin: center center;
-      animation: curve-flip var(--beam-dur) var(--beam-ease) forwards;
-    }
-    @keyframes curve-flip {
-      0%   { transform: scaleY(-1); opacity: 0; }
-      10%  { opacity: var(--beam-opacity); }
-      50%  { transform: scaleY(0); }
-      90%  { opacity: var(--beam-opacity); }
-      100% { transform: scaleY(1); opacity: 0; }
-    }
-
-    /* --- CONTENT --- */
     #content {
       text-align: center;
       z-index: 3;
@@ -196,17 +140,19 @@
       max-width: 90%;
       pointer-events: none;
 
-      /* Safe-area aware padding WITHOUT losing your original spacing */
-      padding:
-        calc(20px + env(safe-area-inset-top))
-        calc(20px + env(safe-area-inset-right))
-        calc(20px + env(safe-area-inset-bottom))
-        calc(20px + env(safe-area-inset-left));
+      /* Keep content readable under notch/island */
+      padding: 20px;
+      padding-left: max(20px, env(safe-area-inset-left));
+      padding-right: max(20px, env(safe-area-inset-right));
+      padding-top: max(20px, env(safe-area-inset-top));
+      padding-bottom: max(20px, env(safe-area-inset-bottom));
     }
 
     /* --- TERMINAL LOG --- */
     #cmd-log {
       position: absolute;
+      bottom: 12vh;
+      left: 6vw;
       z-index: 1;
       text-align: left;
       font-family: 'VT323', monospace;
@@ -223,12 +169,8 @@
       overflow: hidden;
       opacity: 0.8;
 
-      left: calc(6vw + env(safe-area-inset-left));
-      bottom: calc(12vh + env(safe-area-inset-bottom));
-
       transform-origin: right center;
       transform: perspective(1000px) rotateY(10deg);
-
       filter: blur(0.5px);
 
       mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 100%);
@@ -238,11 +180,13 @@
     @media (max-width: 768px) {
       #cmd-log {
         width: 85vw;
-        left: calc(7.5vw + env(safe-area-inset-left));
-        bottom: calc(8vh + env(safe-area-inset-bottom));
+        left: 7.5vw;
+
+        /* safer with home indicator */
+        bottom: max(8vh, env(safe-area-inset-bottom));
+
         height: 20vh;
         font-size: 0.8em;
-
         transform: none;
         filter: none;
 
@@ -259,13 +203,71 @@
       opacity: 0.9;
       filter: blur(0.2px);
     }
+
     .cmd-line.error { color: var(--crt-red-alert) !important; text-shadow: 0 0 5px var(--crt-red-dim) !important; opacity: 1.0 !important; }
     .cmd-line.success { color: var(--crt-blue-alert) !important; text-shadow: 0 0 6px var(--crt-blue-dim) !important; opacity: 1.0 !important; }
     .cmd-line.mystic { color: var(--crt-purple) !important; text-shadow: none !important; filter: none !important; opacity: 1.0 !important; font-weight: bold; letter-spacing: 2px; }
 
     .char-flicker { display: inline-block; animation: char-short-circuit 0.1s infinite; color: inherit; }
     @keyframes char-short-circuit { 0% { opacity: 1.0; } 50% { opacity: 0.2; } 100% { opacity: 1.0; } }
+
     .cmd-line.active::after { content: '▋'; display: inline-block; margin-left: 4px; animation: blink 0.1s step-end infinite; color: inherit; text-shadow: inherit; }
+
+    /* --- FOREGROUND SCANLINES --- */
+    .scanlines {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      background: linear-gradient(to bottom, rgba(0,0,0,0) 50%, var(--fg-scan-color) 50%);
+      background-size: 100% var(--fg-scan-size);
+      animation: scanline-scroll var(--fg-scan-speed) linear infinite;
+    }
+    @keyframes scanline-scroll { 0% { background-position: 0 0; } 100% { background-position: 0 var(--fg-scan-size); } }
+
+    /* --- THE BEAM CONTAINER --- */
+    #beam-container {
+      position: absolute;
+      inset: 0;
+      z-index: 12;
+      pointer-events: none;
+      overflow: hidden;
+      mask-image: linear-gradient(to right, transparent 0%, black 20%, black 80%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, transparent 0%, black 20%, black 80%, transparent 100%);
+    }
+
+    .beam-drop {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      transform: translateY(-120%);
+      mix-blend-mode: screen;
+      opacity: 0.8;
+      animation: drop-fall var(--beam-dur) var(--beam-ease) forwards;
+    }
+    @keyframes drop-fall { 0% { transform: translateY(-120%); } 100% { transform: translateY(120vh); } }
+
+    .beam-line {
+      position: absolute;
+      left: -10%;
+      width: 120%;
+      height: 50px;
+
+      border-top: var(--beam-thick) solid var(--beam-color);
+      border-radius: 50% 50% 0 0;
+      filter: blur(4px);
+      box-shadow: 0 0 15px var(--beam-color);
+
+      transform-origin: center center;
+      animation: curve-flip var(--beam-dur) var(--beam-ease) forwards;
+    }
+    @keyframes curve-flip {
+      0%   { transform: scaleY(-1); opacity: 0; }
+      10%  { opacity: var(--beam-opacity); }
+      50%  { transform: scaleY(0); }
+      90%  { opacity: var(--beam-opacity); }
+      100% { transform: scaleY(1); opacity: 0; }
+    }
 
     /* --- TYPOGRAPHY --- */
     h1 {
@@ -287,6 +289,7 @@
       display: inline-block;
     }
     a:hover { text-shadow: 0 0 10px var(--crt-green), 0 0 20px var(--crt-green); }
+
     .title-col-base { color: var(--crt-green); text-shadow: 0 0 10px var(--crt-green-glow); }
 
     /* --- DOT CONTAINER --- */
@@ -327,8 +330,11 @@
       display: inline-block;
       white-space: nowrap;
       position: relative;
-      transition: transform var(--return-speed, 0.3s) cubic-bezier(0.2, 1, 0.3, 1),
-                  opacity 0.3s ease-out, filter 0.3s ease-out, color 0.2s ease-out;
+      transition:
+        transform var(--return-speed, 0.3s) cubic-bezier(0.2, 1, 0.3, 1),
+        opacity 0.3s ease-out,
+        filter 0.3s ease-out,
+        color 0.2s ease-out;
       will-change: transform;
       filter: blur(var(--base-blur));
       animation: phosphor-breathe 4s ease-in-out infinite;
@@ -389,7 +395,8 @@
     .slice-split { color: transparent !important; text-shadow: none !important; }
     .slice-split::before, .slice-split::after {
       content: attr(data-text);
-      position: absolute; left: 0; top: 0;
+      position: absolute;
+      left: 0; top: 0;
       width: 100%; height: 100%;
       background: transparent;
       opacity: 0.9;
@@ -397,8 +404,16 @@
       white-space: inherit;
       color: inherit;
     }
-    .slice-split::before { clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%); transform: translate(calc(var(--slice-dist, 10px) * -1), -2px); filter: blur(0.5px); }
-    .slice-split::after { clip-path: polygon(0 50%, 100% 50%, 100% 100%, 0 100%); transform: translate(var(--slice-dist, 10px), 2px); filter: blur(0.5px); }
+    .slice-split::before {
+      clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%);
+      transform: translate(calc(var(--slice-dist, 10px) * -1), -2px);
+      filter: blur(0.5px);
+    }
+    .slice-split::after {
+      clip-path: polygon(0 50%, 100% 50%, 100% 100%, 0 100%);
+      transform: translate(var(--slice-dist, 10px), 2px);
+      filter: blur(0.5px);
+    }
 
     /* CURSOR */
     .custom-cursor {
@@ -440,16 +455,21 @@
       box-shadow: 0 0 5px var(--crt-green-glow);
       border-radius: 2px;
     }
-
     @keyframes fade-trail-anim { 0% { opacity: 0.01; filter: blur(0.01px); } 100% { opacity: 0; filter: blur(6px); } }
     @keyframes blink { 0%, 50% { opacity: 0.9; } 51%, 100% { opacity: 0.1; } }
 
-    @media (max-width: 768px) { h1 { font-size: clamp(3em, 12vw, 4.5em); } }
+    @media (max-width: 768px) {
+      h1 { font-size: clamp(3em, 12vw, 4.5em); }
+    }
   </style>
 </head>
 
 <body>
-  <div id="stage">
+  <!-- Scroll context provider (lets Safari do its “glassy overlay” behavior more readily) -->
+  <div id="scroll-proxy" aria-hidden="true"></div>
+
+  <!-- Your pinned app -->
+  <div id="app">
     <canvas id="crt-canvas"></canvas>
     <div class="scanlines" id="scanlines"></div>
     <div id="beam-container"></div>
@@ -465,10 +485,11 @@
         </span>
         <span id="title-right"></span>
       </h1>
+
       <p class="split-target">DevOps Engineer | Architecting resilient systems in the cloud</p>
       <p>
-        <a href="https://github.com/yourusername" target="_blank" class="split-target">GitHub</a> |
-        <a href="https://linkedin.com/in/yourprofile" target="_blank" class="split-target">LinkedIn</a> |
+        <a href="https://github.com/yourusername" target="_blank" class="split-target" rel="noopener noreferrer">GitHub</a> |
+        <a href="https://linkedin.com/in/yourprofile" target="_blank" class="split-target" rel="noopener noreferrer">LinkedIn</a> |
         <a href="mailto:your@email.com" class="split-target">Contact</a>
       </p>
     </div>
@@ -478,10 +499,8 @@
     // --- MOBILE DETECTION ---
     const isMobile = window.innerWidth < 768;
 
-    // --- DISABLE PINCH ZOOM FOR SAFARI ---
-    document.addEventListener('gesturestart', function(e) {
-      e.preventDefault();
-    });
+    // --- DISABLE PINCH ZOOM FOR SAFARI (best-effort; not always honored) ---
+    document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
 
     const CONFIG = {
       chance: { titleChar: 0.1, bodyChar: 0.15, word: 0.18, block: 0.19, burn: 0.03, stuck: 0.15, scanline: 0.9 },
@@ -568,7 +587,9 @@
             const prefix = type === 'mystic' ? '> ' : `[${new Date().toLocaleTimeString('ja-JP', {hour12:false})}] `;
             await this.typeText(prefix + text, type);
             await new Promise(r => setTimeout(r, CONFIG.term.lineDelay + Math.random() * 800));
-          } else { await new Promise(r => setTimeout(r, 100)); }
+          } else {
+            await new Promise(r => setTimeout(r, 100));
+          }
         }
       }
     }
@@ -608,6 +629,7 @@
         wordSpan.setAttribute('data-text', wordText);
         wordSpan.style.animationDuration = (CONFIG.anim.breathMin + Math.random()) + 's';
         elements.words.push(wordSpan);
+
         wordText.split('').forEach(char => {
           const s = document.createElement('span');
           s.className = 'char';
@@ -617,6 +639,7 @@
           wordSpan.appendChild(s);
           elements.chars.push(s);
         });
+
         el.appendChild(wordSpan);
         if (index < words.length - 1) el.appendChild(document.createTextNode(' '));
       });
@@ -625,7 +648,7 @@
     async function animateSkull() {
       const count = CONFIG.skull.flashCount;
       const speed = CONFIG.skull.flashSpeed;
-      for(let i=0; i<count; i++) {
+      for (let i=0; i<count; i++) {
         dotWrapper.classList.toggle('skull-active');
         await new Promise(r => setTimeout(r, speed));
       }
@@ -634,10 +657,9 @@
       dotWrapper.classList.remove('skull-active');
     }
     function loopSkull() {
-      setTimeout(() => {
-        animateSkull();
-        loopSkull();
-      }, CONFIG.skull.minDelay + Math.random() * (CONFIG.skull.maxDelay - CONFIG.skull.minDelay));
+      setTimeout(() => { animateSkull(); loopSkull(); },
+        CONFIG.skull.minDelay + Math.random() * (CONFIG.skull.maxDelay - CONFIG.skull.minDelay)
+      );
     }
     loopSkull();
 
@@ -655,7 +677,7 @@
       const numLines = Math.floor(conf.minLines + Math.random() * (conf.maxLines - conf.minLines + 1));
       const baseOpacity = 0.05 + Math.random() * (conf.opacityMax - 0.05);
 
-      for(let i=0; i<numLines; i++) {
+      for (let i=0; i<numLines; i++) {
         const line = document.createElement('div');
         line.classList.add('beam-line');
         const thick = conf.minThick + Math.random() * (conf.maxThick - conf.minThick);
@@ -677,55 +699,90 @@
     }
     setTimeout(triggerBeam, 1000);
 
-    // -----------------------------
-    // iOS FIX: VisualViewport CSS vars + WebGL resize
-    // -----------------------------
     const canvas = document.getElementById('crt-canvas');
     const gl = canvas.getContext('webgl', { antialias: false, alpha: false });
 
-    function setViewportVarsAndResize() {
+    // --- VisualViewport-driven sizing (CSS + WebGL) ---
+    function resizeAll() {
       const vv = window.visualViewport;
       const cssW = vv ? vv.width : window.innerWidth;
       const cssH = vv ? vv.height : window.innerHeight;
 
-      // Drive ALL fullscreen CSS from these vars (prevents iOS toolbar gaps)
+      // Update CSS vars so #app matches visible viewport
       document.documentElement.style.setProperty('--vvw', cssW + 'px');
       document.documentElement.style.setProperty('--vvh', cssH + 'px');
 
-      // WebGL: match drawing buffer to CSS px * DPR
+      // Make the canvas CSS match, then set actual buffer using DPR
       const dpr = Math.max(1, window.devicePixelRatio || 1);
-
-      canvas.style.width = cssW + "px";
-      canvas.style.height = cssH + "px";
-      canvas.width = Math.round(cssW * dpr);
-      canvas.height = Math.round(cssH * dpr);
+      canvas.style.width = cssW + 'px';
+      canvas.style.height = cssH + 'px';
+      canvas.width = Math.floor(cssW * dpr);
+      canvas.height = Math.floor(cssH * dpr);
 
       gl.viewport(0, 0, canvas.width, canvas.height);
     }
 
-    setViewportVarsAndResize();
-    window.addEventListener('resize', () => requestAnimationFrame(setViewportVarsAndResize));
-    window.addEventListener('orientationchange', () => requestAnimationFrame(setViewportVarsAndResize));
+    window.addEventListener('resize', resizeAll);
+    window.addEventListener('orientationchange', resizeAll);
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', () => requestAnimationFrame(setViewportVarsAndResize));
-      window.visualViewport.addEventListener('scroll', () => requestAnimationFrame(setViewportVarsAndResize));
+      window.visualViewport.addEventListener('resize', resizeAll);
+      window.visualViewport.addEventListener('scroll', resizeAll);
     }
+    resizeAll();
 
-    const vsSource = `attribute vec2 aPosition; varying vec2 vUv; void main() { gl_Position = vec4(aPosition, 0.0, 1.0); vUv = (aPosition + 1.0) * 0.5; vUv.y = 1.0 - vUv.y; }`;
-    const fsSource = `
-      precision mediump float; varying vec2 vUv; uniform float uTime; uniform vec2 uResolution;
-      float rand(vec2 co) { return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453); }
+    // --- Create a tiny scroll context (GitHub-ish toolbar behavior helper) ---
+    window.addEventListener('load', () => {
+      const sp = document.getElementById('scroll-proxy');
+      if (!sp) return;
+
+      // Nudge Safari into “scrollable page” mode without visually moving anything
+      sp.scrollTop = 1;
+      requestAnimationFrame(() => { sp.scrollTop = 0; });
+    });
+
+    const vsSource = `
+      attribute vec2 aPosition;
+      varying vec2 vUv;
       void main() {
-        vec2 uv = vUv; vec2 centered = uv - 0.5; float r2 = dot(centered, centered);
+        gl_Position = vec4(aPosition, 0.0, 1.0);
+        vUv = (aPosition + 1.0) * 0.5;
+        vUv.y = 1.0 - vUv.y;
+      }
+    `;
+
+    const fsSource = `
+      precision mediump float;
+      varying vec2 vUv;
+      uniform float uTime;
+      uniform vec2 uResolution;
+
+      float rand(vec2 co) {
+        return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+      }
+
+      void main() {
+        vec2 uv = vUv;
+        vec2 centered = uv - 0.5;
+        float r2 = dot(centered, centered);
+
         float surge = pow(0.5 + 0.5 * sin(uTime * ${CONFIG.bg.distortSurgeFreq}), 20.0) * ${CONFIG.bg.distortSurgeMult};
         float distAmount = ${CONFIG.bg.distortBase} + sin(uTime * ${CONFIG.bg.distortBreathSpeed}) * ${CONFIG.bg.distortBreathAmp} + surge;
         uv = (centered * (1.0 + distAmount * r2)) + 0.5;
-        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+          gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+          return;
+        }
 
         vec3 color = vec3(0.0, ${CONFIG.bg.baseColor}, 0.0);
+
         float scan = sin((uv.y - uTime * ${CONFIG.bg.scanSpeed}) * uResolution.y * ${CONFIG.bg.scanFreq});
-        scan = scan * 0.5 + 0.5; scan = pow(scan, 3.0); color.g += scan * ${CONFIG.bg.scanInt};
-        float noise = rand(uv * (uTime * ${CONFIG.bg.noiseSpeed})); color.g += (noise - 0.5) * ${CONFIG.bg.noiseInt};
+        scan = scan * 0.5 + 0.5;
+        scan = pow(scan, 3.0);
+        color.g += scan * ${CONFIG.bg.scanInt};
+
+        float noise = rand(uv * (uTime * ${CONFIG.bg.noiseSpeed}));
+        color.g += (noise - 0.5) * ${CONFIG.bg.noiseInt};
 
         float driftT = sin(uTime * ${CONFIG.bg.reflectionSpeed}) * 0.15;
         float driftR = cos(uTime * ${CONFIG.bg.reflectionSpeed} * 0.7) * 0.15;
@@ -735,7 +792,6 @@
         float glareRight = smoothstep(0.0, 0.35 + driftR, uv.x - 0.5);
 
         vec3 refColor = vec3(0.08, 0.12, 0.08);
-
         color += refColor * glareTop * 1.5 * pulse;
         color += (refColor * 0.8) * glareRight * 1.2 * pulse;
 
@@ -743,10 +799,18 @@
         float vigMask = smoothstep(${CONFIG.bg.vigRadius}, ${CONFIG.bg.vigRadius} + ${CONFIG.bg.vigSoftness}, vigDist);
         vec3 vigCol = vec3(${CONFIG.bg.vigColor});
         color = mix(color, vigCol, vigMask * ${CONFIG.bg.vigIntensity});
-        gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
-      }`;
 
-    function compileShader(s, t) { const h = gl.createShader(t); gl.shaderSource(h, s); gl.compileShader(h); return h; }
+        gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+      }
+    `;
+
+    function compileShader(source, type) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      return shader;
+    }
+
     const program = gl.createProgram();
     gl.attachShader(program, compileShader(vsSource, gl.VERTEX_SHADER));
     gl.attachShader(program, compileShader(fsSource, gl.FRAGMENT_SHADER));
@@ -762,12 +826,12 @@
     gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
     const uTime = gl.getUniformLocation(program, 'uTime');
-    const uRes = gl.getUniformLocation(program, 'uResolution');
+    const uRes  = gl.getUniformLocation(program, 'uResolution');
 
     const cursor = document.getElementById('cursor');
-    const greenShades = ['var(--crt-green)', 'var(--crt-green-glow)', 'var(--crt-green-dim)', 'var(--crt-green-dark)'];
-
+    const greenShades = ['var(--crt-green)', 'var(--crt-green-glow)', 'var(--crt-green-dim)', 'var(--crt-green-fade)'];
     let trails = [];
+
     function createTrail(x, y) {
       const el = document.createElement('div');
       el.classList.add('trail');
@@ -799,6 +863,7 @@
       cursor.style.left = x + 'px';
       cursor.style.top = y + 'px';
       cursor.classList.add('active');
+
       if (Math.abs(x - lastMX) + Math.abs(y - lastMY) > 10) {
         createTrail(x, y);
         lastMX = x; lastMY = y;
@@ -806,7 +871,7 @@
     }
 
     document.addEventListener('mousemove', e => moveCursor(e.clientX, e.clientY));
-    document.addEventListener('touchmove', touchMoveCursor, {passive:true});
+    document.addEventListener('touchmove', touchMoveCursor, { passive: true });
     document.addEventListener('touchend', () => {
       setTimeout(() => cursor.classList.remove('active'), 500);
     });
@@ -838,10 +903,13 @@
           return;
         }
       }
+
       if (now - lastGlitchTime < CONFIG.timing.loopSpeed) return;
 
       const roll = Math.random();
-      let target = null, duration = 0, isStuck = (Math.random() < CONFIG.chance.stuck), isBlock = false;
+      let target = null, duration = 0;
+      let isStuck = (Math.random() < CONFIG.chance.stuck);
+      let isBlock = false;
       const breadth = Math.floor(CONFIG.visuals.sliceMin + Math.random() * (CONFIG.visuals.sliceMax - CONFIG.visuals.sliceMin)) + 'px';
 
       if (roll < CONFIG.chance.titleChar && elements.titleChars.length) { target = elements.titleChars[Math.floor(Math.random()*elements.titleChars.length)]; duration = isStuck?800+Math.random()*1000:150; }
@@ -854,10 +922,11 @@
         target.style.setProperty('--slice-dist', breadth);
         target.style.setProperty('--return-speed', Math.random() > 0.5 ? CONFIG.timing.returnFast : CONFIG.timing.returnSlow);
 
-        let type = isBlock ? ['glitch-void','slice-split'][Math.floor(Math.random()*2)]
-                           : ['glitch-bloom','glitch-void','slice-split','glitch-scanline'][Math.floor(Math.random()*4)];
+        let type = isBlock
+          ? ['glitch-void','slice-split'][Math.floor(Math.random()*2)]
+          : ['glitch-bloom','glitch-void','slice-split','glitch-scanline'][Math.floor(Math.random()*4)];
 
-        if (type==='glitch-scanline' && Math.random()>CONFIG.chance.scanline) type='slice-split';
+        if (type === 'glitch-scanline' && Math.random() > CONFIG.chance.scanline) type = 'slice-split';
 
         if (target === dotWrapper || target.parentElement === dotWrapper) {
           target = dotWrapper;
@@ -870,7 +939,7 @@
         setTimeout(() => {
           target.classList.remove(type);
           if (isStuck) target.classList.remove('glitch-stuck');
-          setTimeout(()=>target.style.removeProperty('--slice-dist'),500);
+          setTimeout(() => target.style.removeProperty('--slice-dist'), 500);
         }, duration);
 
         lastGlitchTime = now;
