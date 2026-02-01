@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#000200">
+  
   <title>hartle.tech</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -57,7 +59,6 @@
     /* --- RESET --- */
     html, body, a, button, input, textarea, select { 
       cursor: none !important; 
-      /* Mobile tap highlight remove */
       -webkit-tap-highlight-color: transparent;
     }
     * { box-sizing: border-box; }
@@ -71,6 +72,9 @@
       display: flex; justify-content: center; align-items: center;
       position: relative;
       perspective: 100vh;
+      
+      /* MOBILE: Disable Pinch/Scroll Gestures */
+      touch-action: none; 
     }
 
     #crt-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
@@ -89,7 +93,7 @@
       display: flex; flex-direction: column; justify-content: flex-end;
       height: 350px; width: 650px; overflow: hidden; opacity: 0.8;
 
-      /* DESKTOP DISTORTION: Fish-eye depth on left side */
+      /* DESKTOP DISTORTION */
       transform-origin: right center;
       transform: perspective(1000px) rotateY(10deg);
       
@@ -99,17 +103,17 @@
       -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 100%);
     }
 
-    /* MOBILE OVERRIDES FOR COMMAND BOX */
+    /* MOBILE: Command Box Adjustment */
     @media (max-width: 768px) {
       #cmd-log {
-        width: 90vw; /* Take up most width */
-        left: 5vw;   /* Center it roughly */
-        bottom: 5vh; /* Move down */
-        height: 25vh; /* Limit height */
-        font-size: 0.85em; /* Smaller text */
+        width: 90vw;
+        left: 5vw;
+        bottom: 5vh;
+        height: 25vh;
+        font-size: 0.9em;
         
-        /* Remove 3D rotation on mobile to prevent clipping/oversizing */
-        transform: none; 
+        /* Remove 3D skew on mobile for readability and layout safety */
+        transform: none;
         filter: none;
       }
     }
@@ -254,18 +258,28 @@
     .slice-split::before { clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%); transform: translate(calc(var(--slice-dist, 10px) * -1), -2px); filter: blur(0.5px); }
     .slice-split::after { clip-path: polygon(0 50%, 100% 50%, 100% 100%, 0 100%); transform: translate(var(--slice-dist, 10px), 2px); filter: blur(0.5px); }
 
-    /* MOBILE CURSOR FIX: Hidden by default */
+    /* CURSOR: Hidden on Mobile by Default */
     .custom-cursor { 
       position: fixed; width: 14px; height: 24px; background: var(--crt-green); 
-      opacity: 0; /* HIDDEN DEFAULT */
+      opacity: 0; /* DEFAULT HIDDEN */
       pointer-events: none; z-index: 9999; transform: translate(-2px, -12px); 
       border-radius: 2px; box-shadow: 0 0 5px var(--crt-green), 0 0 10px var(--crt-green); 
-      animation: blink 1.2s step-end infinite; mix-blend-mode: screen; 
+      mix-blend-mode: screen; 
       transition: opacity 0.2s;
     }
-    /* Only show on desktop hover automatically */
+
+    /* DESKTOP ONLY: Enable Cursor & Blinking */
     @media (min-width: 769px) {
-      .custom-cursor { opacity: 0.9; }
+      .custom-cursor { 
+        opacity: 0.9; 
+        animation: blink 1.2s step-end infinite;
+      }
+    }
+
+    /* MOBILE INTERACTION: Only show if dragged */
+    .custom-cursor.active {
+      opacity: 1;
+      animation: blink 1.2s step-end infinite;
     }
 
     .trail { position: absolute; width: 14px; height: 24px; opacity: 0.01; pointer-events: none; z-index: 998; mix-blend-mode: screen; transform: translate(-2px, -12px); box-shadow: 0 0 5px var(--crt-green-glow); border-radius: 2px; }
@@ -304,17 +318,22 @@
     // --- MOBILE DETECTION ---
     const isMobile = window.innerWidth < 768;
 
+    // --- DISABLE PINCH ZOOM FOR SAFARI ---
+    document.addEventListener('gesturestart', function(e) {
+      e.preventDefault();
+    });
+
     const CONFIG = {
       chance: { titleChar: 0.1, bodyChar: 0.15, word: 0.18, block: 0.19, burn: 0.03, stuck: 0.15, scanline: 0.9 },
       timing: { loopSpeed: 1000, burnDelay: 4000, returnFast: '0.1s', returnSlow: '0.2s', fastReturnChance: 1.0 },
       bg: { 
-        // MOBILE FIX: REDUCE DISTORTION ON MOBILE
-        distortBase: isMobile ? '0.1' : '0.2', 
+        // MOBILE OPTIMIZATION: REMOVE DISTORTION & VIGNETTE
+        distortBase: isMobile ? '0.0' : '0.2', 
         distortBreathSpeed: '0.2', distortBreathAmp: '0.02', 
         distortSurgeFreq: '0.1', distortSurgeMult: '0.1', 
         vigColor: '0.0, 0.0, 0.0', 
-        vigIntensity: isMobile ? '0.25' : '0.4', 
-        vigRadius: isMobile ? '0.9' : '0.85', 
+        vigIntensity: isMobile ? '0.0' : '0.4', 
+        vigRadius: isMobile ? '1.5' : '0.85', 
         vigSoftness: '0.45', 
         scanSpeed: '0.02', scanFreq: '1.0', scanInt: '0.03', 
         noiseSpeed: '3.0', noiseInt: '0.08', baseColor: '0.05',
@@ -475,7 +494,7 @@
         dropper.style.setProperty('--beam-ease', easing);
         
         const numLines = Math.floor(conf.minLines + Math.random() * (conf.maxLines - conf.minLines + 1));
-        const baseOpacity = 0.05 + Math.random() * (conf.opacityMax - 0.05); // Random subtlety
+        const baseOpacity = 0.05 + Math.random() * (conf.opacityMax - 0.05);
         
         for(let i=0; i<numLines; i++) {
             const line = document.createElement('div');
@@ -487,6 +506,7 @@
             line.style.setProperty('--beam-thick', thick + 'px');
             line.style.setProperty('--beam-color', conf.color);
             line.style.setProperty('--beam-opacity', baseOpacity);
+            
             line.style.setProperty('--beam-dur', duration + 's');
             line.style.setProperty('--beam-ease', easing);
             
@@ -554,7 +574,6 @@
     const uTime = gl.getUniformLocation(program, 'uTime');
     const uRes = gl.getUniformLocation(program, 'uResolution');
 
-    // --- 7. CURSOR & TRAIL ---
     const cursor = document.getElementById('cursor');
     const greenShades = ['var(--crt-green)', 'var(--crt-green-glow)', 'var(--crt-green-dim)', 'var(--crt-green-fade)'];
     let trails = [];
@@ -567,25 +586,34 @@
       if (trails.length > CONFIG.trails.max) trails.shift().el.remove();
     }
     let lastMX = 0, lastMY = 0;
+    
+    // DESKTOP: Always track cursor
     function moveCursor(x, y) {
       if (!isMobile) {
         cursor.style.left = x + 'px'; cursor.style.top = y + 'px';
         if (Math.abs(x - lastMX) + Math.abs(y - lastMY) > 10) { createTrail(x, y); lastMX = x; lastMY = y; }
       }
     }
-    // Touch move logic for mobile cursor
+
+    // MOBILE: Only track on drag, add 'active' class
     function touchMoveCursor(e) {
       const x = e.touches[0].clientX;
       const y = e.touches[0].clientY;
       cursor.style.left = x + 'px'; cursor.style.top = y + 'px';
-      cursor.style.opacity = 1; // Show cursor on touch
+      
+      // Manually add the active class to show it
+      cursor.classList.add('active');
+      
       if (Math.abs(x - lastMX) + Math.abs(y - lastMY) > 10) { createTrail(x, y); lastMX = x; lastMY = y; }
     }
 
     document.addEventListener('mousemove', e => moveCursor(e.clientX, e.clientY));
+    
+    // Mobile Touch Logic
     document.addEventListener('touchmove', touchMoveCursor, {passive:true});
-    // Hide cursor when touch ends
-    document.addEventListener('touchend', () => { setTimeout(() => cursor.style.opacity = 0, 500); });
+    document.addEventListener('touchend', () => { 
+        setTimeout(() => cursor.classList.remove('active'), 500); 
+    });
 
     function createTextTrail(target) {
       const rect = target.getBoundingClientRect();
