@@ -5,7 +5,9 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   
-  <meta name="theme-color" content="#000200" />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#000200" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000200" />
+  <meta name="color-scheme" content="dark light">
   
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -62,11 +64,11 @@
     }
 
     /* --- RESET --- */
-    html, body, a, button, input, textarea, select { 
-      cursor: none !important; 
-      -webkit-tap-highlight-color: transparent;
+    html {
+      background-color: var(--crt-black-base); /* Fills overscroll gaps */
+      height: 100%;
+      overflow: hidden;
     }
-    * { box-sizing: border-box; }
 
     body {
       margin: 0; padding: 0;
@@ -74,10 +76,10 @@
       color: var(--crt-green);
       font-family: var(--font-stack);
       
-      /* USE DYNAMIC HEIGHT to handle mobile address bars properly */
-      overflow: hidden; 
-      height: 100vh;
+      /* MOBILE FIX: Use Dynamic Viewport Height to fill screen behind bars */
+      width: 100vw;
       height: 100dvh; 
+      overflow: hidden;
       
       display: flex; justify-content: center; align-items: center;
       position: relative;
@@ -85,9 +87,19 @@
       
       /* MOBILE: Disable Pinch/Scroll Gestures */
       touch-action: none; 
+      -webkit-tap-highlight-color: transparent;
+      cursor: none !important; 
     }
 
-    #crt-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+    /* FIXED CANVAS: Ensures background stays pinned and covers full screen */
+    #crt-canvas { 
+      position: fixed; 
+      top: 0; left: 0; 
+      width: 100vw; 
+      height: 100dvh; 
+      z-index: 0; 
+      object-fit: cover;
+    }
     
     #content { 
       text-align: center; z-index: 3; position: absolute; 
@@ -116,17 +128,17 @@
     /* MOBILE: Command Box Adjustment */
     @media (max-width: 768px) {
       #cmd-log {
-        width: 85vw; /* Slightly narrower to stay off edges */
-        left: 7.5vw; /* Centered (100 - 85) / 2 */
-        bottom: 8vh; /* Moved up slightly from very bottom */
-        height: 20vh; /* Reduced height */
-        font-size: 0.8em; /* Smaller text */
+        width: 85vw; /* Fits safely on small screens */
+        left: 7.5vw; /* Centered */
+        bottom: 10vh; /* Raised to avoid bottom gestures */
+        height: 20vh; /* Shorter history */
+        font-size: 0.8em; /* Smaller font */
         
-        /* Remove 3D skew/blur on mobile */
+        /* Remove 3D skew/blur on mobile for crispness */
         transform: none;
         filter: none;
         
-        /* Adjust mask for shorter height */
+        /* Adjust mask */
         mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);
         -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);
       }
