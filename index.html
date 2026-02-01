@@ -2,9 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#000200">
   
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  
+  <meta name="theme-color" content="#000200" />
+  
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
   <title>hartle.tech</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -68,7 +73,12 @@
       background-color: var(--crt-black-base);
       color: var(--crt-green);
       font-family: var(--font-stack);
-      overflow: hidden; height: 100vh;
+      
+      /* USE DYNAMIC HEIGHT to handle mobile address bars properly */
+      overflow: hidden; 
+      height: 100vh;
+      height: 100dvh; 
+      
       display: flex; justify-content: center; align-items: center;
       position: relative;
       perspective: 100vh;
@@ -106,15 +116,19 @@
     /* MOBILE: Command Box Adjustment */
     @media (max-width: 768px) {
       #cmd-log {
-        width: 90vw;
-        left: 5vw;
-        bottom: 5vh;
-        height: 25vh;
-        font-size: 0.9em;
+        width: 85vw; /* Slightly narrower to stay off edges */
+        left: 7.5vw; /* Centered (100 - 85) / 2 */
+        bottom: 8vh; /* Moved up slightly from very bottom */
+        height: 20vh; /* Reduced height */
+        font-size: 0.8em; /* Smaller text */
         
-        /* Remove 3D skew on mobile for readability and layout safety */
+        /* Remove 3D skew/blur on mobile */
         transform: none;
         filter: none;
+        
+        /* Adjust mask for shorter height */
+        mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);
       }
     }
 
@@ -327,7 +341,7 @@
       chance: { titleChar: 0.1, bodyChar: 0.15, word: 0.18, block: 0.19, burn: 0.03, stuck: 0.15, scanline: 0.9 },
       timing: { loopSpeed: 1000, burnDelay: 4000, returnFast: '0.1s', returnSlow: '0.2s', fastReturnChance: 1.0 },
       bg: { 
-        // MOBILE OPTIMIZATION: REMOVE DISTORTION & VIGNETTE
+        // MOBILE OPTIMIZATION: ZERO DISTORTION/VIGNETTE
         distortBase: isMobile ? '0.0' : '0.2', 
         distortBreathSpeed: '0.2', distortBreathAmp: '0.02', 
         distortSurgeFreq: '0.1', distortSurgeMult: '0.1', 
